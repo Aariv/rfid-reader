@@ -5,14 +5,13 @@ package com.denali.rfid.dto;
 
 import java.util.List;
 
+import com.denali.rfid.utils.DateUtils;
 
 /**
  * @author zentere
  *
  */
 public class ReaderDTO {
-
-	private String id;
 
 	private String readerId;
 
@@ -30,27 +29,12 @@ public class ReaderDTO {
 
 	private Integer readerTableId;
 
-	private String createdDateTime;
+	private String createdDateTime = DateUtils.dateFormattedWith24Hours();
 
-	private String lastUpdatedTime;
+	private String lastUpdatedTime = DateUtils.dateFormattedWith24Hours();;
 
 	public ReaderDTO() {
 		// TODO Auto-generated constructor stub
-	}
-
-	/**
-	 * @return the id
-	 */
-	public String getId() {
-		return id;
-	}
-
-	/**
-	 * @param id
-	 *            the id to set
-	 */
-	public void setId(String id) {
-		this.id = id;
 	}
 
 	/**

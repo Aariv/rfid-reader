@@ -34,7 +34,5 @@ public class ListAggregationStrategy implements AggregationStrategy {
 			list.add(newBody);
 			return oldExchange;
 		}
-
 	}
-
 }

@@ -38,7 +38,7 @@ public class RfidRouter extends RouteBuilder {
 					.completionInterval(3000)
 						// makes sure the last batch will be processed before application shuts down:
 						.forceCompletionOnStop().to(elasticBulkIndexHost)
-							.log("Uploaded documents to rfid index ${headers.indexName}: ${body.size()}");
+							.log("Uploaded documents on ${headers.indexName}: ${body.size()}");
 	}
 
 }

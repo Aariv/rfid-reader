@@ -27,13 +27,16 @@ public class ReaderRouter extends RouteBuilder {
 
 	@Override
 	public void configure() throws Exception {
+		
+		onException(RuntimeException.class).handled(true).log("Error has occured");
+		
 		from("direct-vm:processReader")
 			.routeId(readerRouterName)
 				.log("Reader Details -> ${body}")
 					.to(readerAPI)
 					.bean(RFIDCommon.class, "onConvertReaderElasticMap")
 					.to(bulkIndexEndpoint)
-						.log("Reader uploaded success ${body}");
+						.log("Reader updated success ${body}");
 	}
 
 }

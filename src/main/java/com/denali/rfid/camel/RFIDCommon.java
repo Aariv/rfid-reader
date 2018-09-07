@@ -25,6 +25,7 @@ import org.springframework.stereotype.Component;
 
 import com.denali.rfid.dto.ReaderDTO;
 import com.denali.rfid.dto.RfidDTO;
+import com.denali.rfid.dto.VisitorDetailsDTO;
 import com.denali.rfid.utils.DateUtils;
 import com.denali.rfid.utils.RFIDParserUtils;
 import com.fasterxml.jackson.core.JsonParseException;
@@ -56,19 +57,25 @@ public class RFIDCommon {
 		exchange.getIn().setBody(indexRequest);
 		exchange.getIn().setHeader("indexName", "rfid_idx");
 	}
-	
+
+	/**
+	 * 
+	 * @param exchange
+	 * 
+	 * Index list of reader details
+	 */
 	public void onConvertReaderElasticMap(Exchange exchange) {
 		try {
 			String dataFromOdoo = exchange.getIn().getBody(String.class);
-			JSONArray jsonArray = new JSONArray(dataFromOdoo);
+			JSONObject jsonObject = new JSONObject(dataFromOdoo);
+			JSONArray readersArray = jsonObject.getJSONArray("data");
 			List<ReaderDTO> bulkReaders = new ArrayList<>();
 			BulkRequest bulkRequest = new BulkRequest();
-			for (int i = 0; i < jsonArray.length(); i++) {
-				JSONObject reader = jsonArray.getJSONObject(i);
-				ObjectMapper mapper = new ObjectMapper();
-				ReaderDTO readerDto = mapper.readValue(reader.toString(), ReaderDTO.class);
-				bulkReaders.add(readerDto);
+			for (int i = 0; i < readersArray.length(); i++) {
 				ObjectMapper oMapper = new ObjectMapper();
+				JSONObject reader = readersArray.getJSONObject(i);
+				ReaderDTO readerDto = oMapper.readValue(reader.toString(), ReaderDTO.class);
+				bulkReaders.add(readerDto);
 				@SuppressWarnings("unchecked")
 				Map<String, Object> map = oMapper.convertValue(readerDto, Map.class);
 				IndexRequest indexRequest = new IndexRequest("reader_idx", "reader");
@@ -91,10 +98,57 @@ public class RFIDCommon {
 		}
 	}
 	
-	private String generateId(RfidDTO rfid) {
-		return rfid.getReader() + "-" + rfid.getAntenna() + "-" + rfid.getEpc() + "-" + rfid.getCssRssi() +"-" + generateRandomString();
+	/**
+	 * 
+	 * @param exchange
+	 * 
+	 * Visitor Index Elastic map
+	 * 
+	 */
+	public void onConvertVisitorElasticMap(Exchange exchange) {
+		try {
+			String dataFromOdoo = exchange.getIn().getBody(String.class);
+			Object epcData = exchange.getProperty("EPC");
+			
+			JSONObject jsonObject = new JSONObject(dataFromOdoo);
+			Boolean result = jsonObject.getBoolean("result");
+			if(result) {
+				String epc = (String) epcData;
+				JSONObject visitor = jsonObject.getJSONObject("data");
+				ObjectMapper oMapper = new ObjectMapper();
+				VisitorDetailsDTO readerDto = oMapper.readValue(visitor.toString(), VisitorDetailsDTO.class);
+				@SuppressWarnings("unchecked")
+				Map<String, Object> map = oMapper.convertValue(readerDto, Map.class);
+				IndexRequest indexRequest = new IndexRequest("vrl_idx", "vrl", epc);
+				indexRequest.source(map);
+				exchange.getIn().setBody(indexRequest);
+			} else {
+				exchange.getIn().setBody(null);
+			}
+		} catch (JsonParseException e) {
+			e.printStackTrace();
+		} catch (JsonMappingException e) {
+			e.printStackTrace();
+		} catch (ElasticsearchGenerationException e) {
+			e.printStackTrace();
+		} catch (IllegalArgumentException e) {
+			e.printStackTrace();
+		} catch (JSONException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
 	}
 	
+	public void onConvertAlarmElasticMap(Exchange exchange) {
+		
+	}
+
+	private String generateId(RfidDTO rfid) {
+		return rfid.getReader() + "-" + rfid.getAntenna() + "-" + rfid.getEpc() + "-" + rfid.getCssRssi() + "-"
+				+ generateRandomString();
+	}
+
 	private String generateRandomString() {
 		int leftLimit = 97; // letter 'a'
 		int rightLimit = 122; // letter 'z'
@@ -114,12 +168,47 @@ public class RFIDCommon {
 		SearchRequest search = new SearchRequest();
 		SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
 		BoolQueryBuilder boolQuery = QueryBuilders.boolQuery();
-		boolQuery.should(QueryBuilders.termQuery("reader_id", data.getReader()));
+		boolQuery.should(QueryBuilders.termQuery("readerId", data.getReader()));
 		sourceBuilder.query(boolQuery);
 		search.source(sourceBuilder);
 		exchange.getIn().setBody(search);
 	}
 	
+	/**
+	 * 
+	 * @param exchange
+	 * 
+	 * Get details by epc from vrl_idx
+	 */
+	public void onVisitorSearchsRequest(Exchange exchange) {
+		Object rfid = exchange.getProperty("RFID");
+		RfidDTO data = (RfidDTO) rfid;
+		SearchRequest search = new SearchRequest();
+		SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+		BoolQueryBuilder boolQuery = QueryBuilders.boolQuery();
+		boolQuery.should(QueryBuilders.termQuery("_id", data.getEpc()));
+		sourceBuilder.query(boolQuery);
+		search.source(sourceBuilder);
+		exchange.getIn().setBody(search);
+	}
+	
+	/**
+	 * 
+	 * @param exchange
+	 * 
+	 * Search for visitor for given epc
+	 */
+	public void onVisitorSearch(Exchange exchange) {
+		String epc = exchange.getIn().getBody(String.class);
+		SearchRequest search = new SearchRequest();
+		SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+		BoolQueryBuilder boolQuery = QueryBuilders.boolQuery();
+		boolQuery.should(QueryBuilders.termQuery("_id", epc));
+		sourceBuilder.query(boolQuery);
+		search.source(sourceBuilder);
+		exchange.getIn().setBody(search);
+	}
+
 	public void onVerifyReader(Exchange exchange) {
 		String dataFromElastic = exchange.getIn().getBody(String.class);
 		try {
@@ -128,12 +217,12 @@ public class RFIDCommon {
 			JSONArray hitsResult = hits.getJSONArray("hits");
 			if (hitsResult != null && hitsResult.length() > 0) {
 				JSONObject jsonObject = hitsResult.getJSONObject(0);
-				JSONObject rfid = jsonObject.getJSONObject("_source");
+				JSONObject reader = jsonObject.getJSONObject("_source");
 				ObjectMapper mapper = new ObjectMapper();
-				RfidDTO rfidDTO = mapper.readValue(rfid.toString(), RfidDTO.class);
-				exchange.getIn().setBody(rfidDTO);
+				ReaderDTO readerDto = mapper.readValue(reader.toString(), ReaderDTO.class);
+				exchange.getIn().setBody(readerDto);
 			} else {
-				exchange.getIn().setBody("RFID");
+				exchange.getIn().setBody("NotFound");
 			}
 		} catch (JsonParseException e) {
 			e.printStackTrace();
@@ -144,5 +233,42 @@ public class RFIDCommon {
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
+	}
+	
+	/**
+	 * 
+	 * @param exchange
+	 * 
+	 * Check if visitor is available or not for given epc
+	 */
+	public void onVerifyVisitor(Exchange exchange) {
+		String dataFromElastic = exchange.getIn().getBody(String.class);
+		try {
+			JSONObject fromEs = new JSONObject(dataFromElastic);
+			JSONObject hits = fromEs.getJSONObject("hits");
+			JSONArray hitsResult = hits.getJSONArray("hits");
+			if (hitsResult != null && hitsResult.length() > 0) {
+				JSONObject jsonObject = hitsResult.getJSONObject(0);
+				JSONObject visitor = jsonObject.getJSONObject("_source");
+				ObjectMapper mapper = new ObjectMapper();
+				VisitorDetailsDTO visitorDto = mapper.readValue(visitor.toString(), VisitorDetailsDTO.class);
+				exchange.getIn().setBody(visitorDto);
+			} else {
+				exchange.getIn().setBody("NotFound");
+			}
+		} catch (JsonParseException e) {
+			e.printStackTrace();
+		} catch (JsonMappingException e) {
+			e.printStackTrace();
+		} catch (JSONException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
+	
+	public void validateVisitor(Exchange exchange) {
+		String data = exchange.getIn().getBody(String.class);
+		exchange.getIn().setBody(RFIDParserUtils.onParse(data));
 	}
 }
